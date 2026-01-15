@@ -1,0 +1,45 @@
+# Files
+.env
+*/.env
+
+# Folders
+__pycache__/
+*/__pycache__
+
+# Others
+*.cs
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# User data
+user_data.json
+*.data
+*.dat
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Distribution
+dist/
+build/
+*.egg-info/
