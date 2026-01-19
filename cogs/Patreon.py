@@ -5,7 +5,7 @@ import aiohttp
 import os
 from typing import List, Optional
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 import time
 
@@ -50,30 +50,44 @@ class PersistentSetupView(discord.ui.View):
         """Show files if user is verified"""
         await interaction.response.defer(ephemeral=True)
         
-        if not os.path.exists(self.cog.user_data_file):
-            await interaction.followup.send(
-                "❌ **Not Verified**: Please verify your email first by clicking the **Verify Email** button!",
-                ephemeral=True
-            )
+        # Check ban status
+        ban_msg = self.cog.check_ban_status(interaction.user.id)
+        if ban_msg:
+            await interaction.followup.send(ban_msg, ephemeral=True)
             return
         
-        try:
-            with open(self.cog.user_data_file, 'r') as f:
-                all_data = json.load(f)
-        except:
-            await interaction.followup.send("❌ **Error reading data**", ephemeral=True)
-            return
+        # Check temp access
+        temp_access, temp_expiry = self.cog.check_temp_access(interaction.user.id)
         
-        user_data = all_data.get(str(interaction.user.id))
-        if not user_data:
-            await interaction.followup.send(
-                "❌ **Not Verified**: Please verify your email first by clicking the **Verify Email** button!",
-                ephemeral=True
-            )
-            return
-        
-        tiers = user_data.get('tiers', [])
-        files = self.cog.get_files_for_tiers(tiers)
+        if temp_access:
+            files = self.cog.get_all_files()
+            embed_footer = f"✅ Temporary Access (Expires <t:{int(temp_expiry.timestamp())}:R>)"
+        else:
+            if not os.path.exists(self.cog.user_data_file):
+                await interaction.followup.send(
+                    "❌ **Not Verified**: Please verify your email first by clicking the **Verify Email** button!",
+                    ephemeral=True
+                )
+                return
+            
+            try:
+                with open(self.cog.user_data_file, 'r') as f:
+                    all_data = json.load(f)
+            except:
+                await interaction.followup.send("❌ **Error reading data**", ephemeral=True)
+                return
+            
+            user_data = all_data.get(str(interaction.user.id))
+            if not user_data:
+                await interaction.followup.send(
+                    "❌ **Not Verified**: Please verify your email first by clicking the **Verify Email** button!",
+                    ephemeral=True
+                )
+                return
+            
+            tiers = user_data.get('tiers', [])
+            files = self.cog.get_files_for_tiers(tiers)
+            embed_footer = "Files will be sent to your DMs • Click buttons below to download"
         
         if not files:
             await interaction.followup.send("❌ **No files available**", ephemeral=True)
@@ -101,7 +115,7 @@ class PersistentSetupView(discord.ui.View):
                 file_list += f"\n... and {len(file_names) - 10} more"
             embed.add_field(name=f"📁 {tier}", value=file_list, inline=False)
         
-        embed.set_footer(text="Files will be sent to your DMs • Click buttons below to download")
+        embed.set_footer(text=embed_footer)
         
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
@@ -123,30 +137,44 @@ class SetupView(discord.ui.View):
         """Show files if user is verified"""
         await interaction.response.defer(ephemeral=True)
         
-        if not os.path.exists(self.cog.user_data_file):
-            await interaction.followup.send(
-                "❌ **Not Verified**: Please verify your email first!",
-                ephemeral=True
-            )
+        # Check ban status
+        ban_msg = self.cog.check_ban_status(interaction.user.id)
+        if ban_msg:
+            await interaction.followup.send(ban_msg, ephemeral=True)
             return
         
-        try:
-            with open(self.cog.user_data_file, 'r') as f:
-                all_data = json.load(f)
-        except:
-            await interaction.followup.send("❌ **Error reading data**", ephemeral=True)
-            return
+        # Check temp access
+        temp_access, temp_expiry = self.cog.check_temp_access(interaction.user.id)
         
-        user_data = all_data.get(str(interaction.user.id))
-        if not user_data:
-            await interaction.followup.send(
-                "❌ **Not Verified**: Please verify your email first!",
-                ephemeral=True
-            )
-            return
-        
-        tiers = user_data.get('tiers', [])
-        files = self.cog.get_files_for_tiers(tiers)
+        if temp_access:
+            files = self.cog.get_all_files()
+            embed_footer = f"✅ Temporary Access (Expires <t:{int(temp_expiry.timestamp())}:R>)"
+        else:
+            if not os.path.exists(self.cog.user_data_file):
+                await interaction.followup.send(
+                    "❌ **Not Verified**: Please verify your email first!",
+                    ephemeral=True
+                )
+                return
+            
+            try:
+                with open(self.cog.user_data_file, 'r') as f:
+                    all_data = json.load(f)
+            except:
+                await interaction.followup.send("❌ **Error reading data**", ephemeral=True)
+                return
+            
+            user_data = all_data.get(str(interaction.user.id))
+            if not user_data:
+                await interaction.followup.send(
+                    "❌ **Not Verified**: Please verify your email first!",
+                    ephemeral=True
+                )
+                return
+            
+            tiers = user_data.get('tiers', [])
+            files = self.cog.get_files_for_tiers(tiers)
+            embed_footer = "Files will be sent to your DMs"
         
         if not files:
             await interaction.followup.send("❌ **No files available**", ephemeral=True)
@@ -172,7 +200,7 @@ class SetupView(discord.ui.View):
             file_list = "\n".join([f"• {name}" for name in file_names])
             embed.add_field(name=f"📁 {tier}", value=file_list, inline=False)
         
-        embed.set_footer(text="Files will be sent to your DMs")
+        embed.set_footer(text=embed_footer)
         
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
@@ -218,6 +246,7 @@ class EmailModal(discord.ui.Modal, title="Verify Patreon Email"):
                 'verified_at': datetime.now().isoformat()
             }
             
+            
             all_data = {}
             if os.path.exists(self.cog.user_data_file):
                 try:
@@ -225,6 +254,11 @@ class EmailModal(discord.ui.Modal, title="Verify Patreon Email"):
                         all_data = json.load(f)
                 except:
                     pass
+            
+            # Preserve ban_expiry if exists
+            existing_user = all_data.get(str(interaction.user.id))
+            if existing_user and 'ban_expiry' in existing_user:
+                user_data['ban_expiry'] = existing_user['ban_expiry']
             
             all_data[str(interaction.user.id)] = user_data
             
@@ -355,6 +389,12 @@ class DownloadAllButton(discord.ui.Button):
         """Download all files to DM"""
         await interaction.response.defer(ephemeral=True)
         
+        # Check ban status
+        ban_msg = self.cog.check_ban_status(interaction.user.id)
+        if ban_msg:
+            await interaction.followup.send(ban_msg, ephemeral=True)
+            return
+        
         try:
             # Try to send a DM
             dm_channel = await self.user.create_dm()
@@ -455,6 +495,12 @@ class FileDownloadButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         """Download single file to DM"""
         await interaction.response.defer(ephemeral=True)
+        
+        # Check ban status
+        ban_msg = self.cog.check_ban_status(interaction.user.id)
+        if ban_msg:
+            await interaction.followup.send(ban_msg, ephemeral=True)
+            return
         
         try:
             dm_channel = await self.user.create_dm()
@@ -606,6 +652,99 @@ class PatreonCog(commands.Cog):
         with open(self.config_file, 'w') as f:
             json.dump(config, f, indent=2)
     
+    def check_ban_status(self, user_id: int) -> Optional[str]:
+        """Check if a user is temporarily banned"""
+        if not os.path.exists(self.user_data_file):
+            return None
+            
+        try:
+            with open(self.user_data_file, 'r') as f:
+                all_data = json.load(f)
+        except:
+            return None
+            
+        user_data = all_data.get(str(user_id))
+        if not user_data:
+            return None
+            
+        ban_expiry = user_data.get('ban_expiry')
+        if ban_expiry:
+            expiry_dt = datetime.fromisoformat(ban_expiry)
+            if expiry_dt > datetime.now():
+                # Use Discord's relative timestamp for countdown
+                timestamp = int(expiry_dt.timestamp())
+                
+                # Calculate precise remaining time
+                remaining = expiry_dt - datetime.now()
+                total_seconds = int(remaining.total_seconds())
+                
+                days = total_seconds // 86400
+                remaining_seconds = total_seconds % 86400
+                hours = remaining_seconds // 3600
+                remaining_seconds = remaining_seconds % 3600
+                minutes = remaining_seconds // 60
+                seconds = remaining_seconds % 60
+                
+                parts = []
+                if days > 0:
+                    parts.append(f"{days}d")
+                if hours > 0:
+                    parts.append(f"{hours}h")
+                if minutes > 0:
+                    parts.append(f"{minutes}m")
+                parts.append(f"{seconds}s")
+                
+                time_str = " ".join(parts)
+                
+                return f"⛔ **Access Denied**: You are temporarily banned from downloading files.\n**Time Remaining**: {time_str} (<t:{timestamp}:R>)"
+        
+        return None
+
+        return None
+
+    def check_temp_access(self, user_id: int) -> tuple[bool, Optional[datetime]]:
+        """Check if user has temporary full access"""
+        if not os.path.exists(self.user_data_file):
+            return False, None
+            
+        try:
+            with open(self.user_data_file, 'r') as f:
+                all_data = json.load(f)
+        except:
+            return False, None
+            
+        user_data = all_data.get(str(user_id))
+        if not user_data:
+            return False, None
+            
+        access_expiry = user_data.get('access_expiry')
+        if access_expiry:
+            expiry_dt = datetime.fromisoformat(access_expiry)
+            if expiry_dt > datetime.now():
+                return True, expiry_dt
+        
+        return False, None
+
+    def get_all_files(self) -> List[FileDetails]:
+        """Get all available files"""
+        files = []
+        seen = set()
+        
+        # Add all tier files
+        for tier_files in self.files_by_tier.values():
+            for file in tier_files:
+                if file.link not in seen:
+                    files.append(file)
+                    seen.add(file.link)
+        
+        # Add global files
+        for file in self.global_files:
+            if file.link not in seen:
+                files.append(file)
+                seen.add(file.link)
+        
+        return files
+
     async def log_action(self, message: str, user: discord.User = None, color: discord.Color = discord.Color.blue()):
         """Log an action to the log channel"""
         if not self.log_channel_id:
@@ -845,6 +984,7 @@ class PatreonCog(commands.Cog):
         return "Unknown"
     
     @app_commands.command(name="setup", description="Setup Patreon access panel")
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def setup(self, interaction: discord.Interaction):
         """Interactive setup - creates persistent view if used by admin in channel"""
@@ -911,6 +1051,7 @@ class PatreonCog(commands.Cog):
             print(f"Setup error: {e}")
     
     @app_commands.command(name="grantaccess", description="[Admin] Grant full access to a user")
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def grant_access(self, interaction: discord.Interaction, user: discord.Member):
         """Admin command to grant full access"""
@@ -974,8 +1115,197 @@ class PatreonCog(commands.Cog):
             )
         except:
             pass
+            
+    @grant_access.error
+    async def grant_access_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        """Handle errors for grant_access command"""
+        if isinstance(error, app_commands.TransformerError):
+            await interaction.response.send_message(
+                f"❌ **Invalid User**: Could not find user '{error.value}'. Please make sure to mention a valid user or provide a valid user ID.",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"❌ **Error**: {str(error)}",
+                ephemeral=True
+            )
     
+    @app_commands.command(name="tempban", description="[Admin] Temporarily ban a user from downloading files")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def tempban(self, interaction: discord.Interaction, user: discord.Member, days: int):
+        """Temp ban a user"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except:
+            return
+
+        if days <= 0:
+            await interaction.followup.send("❌ **Error**: Days must be positive", ephemeral=True)
+            return
+
+        # Load data
+        all_data = {}
+        if os.path.exists(self.user_data_file):
+            try:
+                with open(self.user_data_file, 'r') as f:
+                    all_data = json.load(f)
+            except:
+                pass
+        
+        user_id_str = str(user.id)
+        if user_id_str not in all_data:
+            # Create basic entry if not exists
+            all_data[user_id_str] = {
+                'discord_id': user.id,
+                'email': 'unknown',
+                'tiers': []
+            }
+        
+        # Set expiry
+        expiry = datetime.now() + timedelta(days=days)
+        all_data[user_id_str]['ban_expiry'] = expiry.isoformat()
+        
+        with open(self.user_data_file, 'w') as f:
+            json.dump(all_data, f, indent=2)
+            
+        await interaction.followup.send(
+            f"✅ **Banned**: {user.mention} is banned from downloads for {days} days.\n"
+            f"Expires: <t:{int(expiry.timestamp())}:R>",
+            ephemeral=True
+        )
+        
+        await self.log_action(
+            f"**User Temp-Banned**\n"
+            f"User: {user.mention}\n"
+            f"Banned by: {interaction.user.mention}\n"
+            f"Duration: {days} days\n"
+            f"Expires: <t:{int(expiry.timestamp())}:F>",
+            interaction.user,
+            discord.Color.red()
+        )
+    
+    @app_commands.command(name="removetempban", description="[Admin] Remove a temporary ban from a user")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def remove_temp_ban(self, interaction: discord.Interaction, user: discord.Member):
+        """Remove temp ban from a user"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except:
+            return
+
+        all_data = {}
+        if os.path.exists(self.user_data_file):
+            try:
+                with open(self.user_data_file, 'r') as f:
+                    all_data = json.load(f)
+            except:
+                pass
+        
+        user_id_str = str(user.id)
+        
+        if user_id_str not in all_data or 'ban_expiry' not in all_data[user_id_str]:
+            await interaction.followup.send(f"❌ **{user.mention}** is not currently banned.", ephemeral=True)
+            return
+            
+        # Remove ban_expiry
+        del all_data[user_id_str]['ban_expiry']
+        
+        with open(self.user_data_file, 'w') as f:
+            json.dump(all_data, f, indent=2)
+            
+        await interaction.followup.send(
+            f"✅ **Unbanned**: Temporary ban removed for {user.mention}.",
+            ephemeral=True
+        )
+        
+        await self.log_action(
+            f"**User Unbanned**\n"
+            f"User: {user.mention}\n"
+            f"Unbanned by: {interaction.user.mention}",
+            interaction.user,
+            discord.Color.green()
+        )
+
+        await self.log_action(
+            f"**User Unbanned**\n"
+            f"User: {user.mention}\n"
+            f"Unbanned by: {interaction.user.mention}",
+            interaction.user,
+            discord.Color.green()
+        )
+    
+    @app_commands.command(name="granttempaccess", description="[Admin] Grant temporary full access to a user")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def grant_temp_access(self, interaction: discord.Interaction, user: discord.Member, days: int):
+        """Grant temporary full access to a user"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except:
+            return
+
+        if days <= 0:
+            await interaction.followup.send("❌ **Error**: Days must be positive", ephemeral=True)
+            return
+
+        # Load data
+        all_data = {}
+        if os.path.exists(self.user_data_file):
+            try:
+                with open(self.user_data_file, 'r') as f:
+                    all_data = json.load(f)
+            except:
+                pass
+        
+        user_id_str = str(user.id)
+        if user_id_str not in all_data:
+            all_data[user_id_str] = {
+                'discord_id': user.id,
+                'email': 'temp_access',
+                'tiers': []
+            }
+        
+        # Set expiry
+        expiry = datetime.now() + timedelta(days=days)
+        all_data[user_id_str]['access_expiry'] = expiry.isoformat()
+        
+        with open(self.user_data_file, 'w') as f:
+            json.dump(all_data, f, indent=2)
+            
+        timestamp = int(expiry.timestamp())
+        
+        await interaction.followup.send(
+            f"✅ **Access Granted**: {user.mention} has full access for {days} days.\n"
+            f"Expires: <t:{timestamp}:F> (<t:{timestamp}:R>)",
+            ephemeral=True
+        )
+        
+        await self.log_action(
+            f"**Temp Access Granted**\n"
+            f"User: {user.mention}\n"
+            f"Granted by: {interaction.user.mention}\n"
+            f"Duration: {days} days\n"
+            f"Expires: <t:{timestamp}:F>",
+            interaction.user,
+            discord.Color.green()
+        )
+        
+        # Try to notify user
+        try:
+            dm = await user.create_dm()
+            await dm.send(
+                f"🎉 **Temporary Access Granted!**\n\n"
+                f"You have been given full access to all files for {days} days.\n"
+                f"Expires: <t:{timestamp}:F>\n"
+                f"Use `/files` in the server to see downloads!"
+            )
+        except:
+            pass
+
     @app_commands.command(name="setlogchannel", description="[Admin] Set the logging channel")
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def set_log_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         """Set the log channel"""
@@ -1003,6 +1333,7 @@ class PatreonCog(commands.Cog):
         )
     
     @app_commands.command(name="help", description="Show bot help and commands")
+    @app_commands.guild_only()
     async def help_command(self, interaction: discord.Interaction):
         """Show help information"""
         try:
@@ -1024,6 +1355,7 @@ class PatreonCog(commands.Cog):
             value=(
                 "`/setup` - Open interactive setup panel\n"
                 "`/verify <email>` - Verify your Patreon email\n"
+                "`/status` - Check your account status\n"
                 "`/files` - View your available files\n"
                 "`/download <filename>` - Download a specific file\n"
                 "`/ping` - Test bot responsiveness\n"
@@ -1038,6 +1370,9 @@ class PatreonCog(commands.Cog):
                 value=(
                     "`/setup` - Create persistent setup panel in channel\n"
                     "`/grantaccess <user>` - Grant full access to a user\n"
+                    "`/granttempaccess <user> <days>` - Grant temporary full access\n"
+                    "`/tempban <user> <days>` - Temporarily ban a user\n"
+                    "`/removetempban <user>` - Remove ban from a user\n"
                     "`/setlogchannel <channel>` - Set bot logging channel"
                 ),
                 inline=False
@@ -1065,6 +1400,7 @@ class PatreonCog(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
     
     @app_commands.command(name="ping", description="Test bot responsiveness")
+    @app_commands.guild_only()
     async def ping(self, interaction: discord.Interaction):
         """Ping command"""
         await interaction.response.defer(ephemeral=True)
@@ -1072,6 +1408,7 @@ class PatreonCog(commands.Cog):
         await interaction.followup.send(f"🏓 Pong! {latency}ms", ephemeral=True)
     
     @app_commands.command(name="verify", description="Verify your Patreon subscription")
+    @app_commands.guild_only()
     async def verify(self, interaction: discord.Interaction, email: str):
         """Verify Patreon subscription"""
         start_time = time.time()
@@ -1110,6 +1447,11 @@ class PatreonCog(commands.Cog):
                 except:
                     pass
             
+            # Preserve ban_expiry if exists
+            existing_user = all_data.get(str(interaction.user.id))
+            if existing_user and 'ban_expiry' in existing_user:
+                user_data['ban_expiry'] = existing_user['ban_expiry']
+
             all_data[str(interaction.user.id)] = user_data
             
             with open(self.user_data_file, 'w') as f:
@@ -1132,7 +1474,82 @@ class PatreonCog(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ **Error**: {str(e)}", ephemeral=True)
     
+    @app_commands.command(name="status", description="Check your account status")
+    @app_commands.guild_only()
+    async def status(self, interaction: discord.Interaction):
+        """Check your account status"""
+        await interaction.response.defer(ephemeral=True)
+        
+        # Check if banned
+        ban_msg = self.check_ban_status(interaction.user.id)
+        is_banned = ban_msg is not None
+        
+        # Check temp access
+        temp_access, temp_expiry = self.check_temp_access(interaction.user.id)
+        
+        # Check user data
+        all_data = {}
+        if os.path.exists(self.user_data_file):
+            try:
+                with open(self.user_data_file, 'r') as f:
+                    all_data = json.load(f)
+            except:
+                pass
+        
+        user_data = all_data.get(str(interaction.user.id))
+        is_verified = user_data is not None
+        
+        embed = discord.Embed(
+            title="👤 Account Status",
+            color=discord.Color.blue()
+        )
+        
+        # 1. Verification Status
+        if is_verified:
+            embed.add_field(name="Patreon Verification", value="✅ **Verified**", inline=True)
+            email = user_data.get('email')
+            if email:
+                if email == 'temp_access':
+                   embed.add_field(name="Email", value="*(Temporary Account)*", inline=True)
+                else:
+                    embed.add_field(name="Email", value=f"`{email}`", inline=True)
+        else:
+            embed.add_field(name="Patreon Verification", value="❌ **Not Verified**", inline=True)
+            embed.color = discord.Color.light_grey()
+            if not temp_access and not is_banned:
+                embed.description = "Use `/setup` or `/verify` to link your Patreon account."
+
+        # 2. Access Status
+        if is_banned:
+            embed.add_field(name="Access Status", value="⛔ **BANNED**", inline=False)
+            embed.color = discord.Color.red()
+            
+            # Extract timer from ban message if possible, or re-calculate
+            ban_expiry = user_data.get('ban_expiry')
+            if ban_expiry:
+                expiry_dt = datetime.fromisoformat(ban_expiry)
+                timestamp = int(expiry_dt.timestamp())
+                embed.add_field(name="Ban Expires", value=f"<t:{timestamp}:F> (<t:{timestamp}:R>)", inline=False)
+                
+        elif temp_access:
+            embed.add_field(name="Access Status", value="🌟 **Temporary Full Access**", inline=False)
+            embed.color = discord.Color.gold()
+            timestamp = int(temp_expiry.timestamp())
+            embed.add_field(name="Access Expires", value=f"<t:{timestamp}:F> (<t:{timestamp}:R>)", inline=False)
+            
+        elif is_verified:
+            tiers = user_data.get('tiers', [])
+            if tiers:
+                tier_list = "\n".join([f"• {tier}" for tier in tiers])
+                embed.add_field(name="Active Tiers", value=tier_list, inline=False)
+            else:
+                embed.add_field(name="Active Tiers", value="No active tiers found", inline=False)
+                
+        embed.set_footer(text=f"User: {interaction.user.name}")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
     @app_commands.command(name="files", description="View your available files")
+    @app_commands.guild_only()
     async def files(self, interaction: discord.Interaction):
         """Show available files"""
         try:
@@ -1144,24 +1561,38 @@ class PatreonCog(commands.Cog):
             print(f"[FILES] Error deferring: {e}")
             return
         
-        if not os.path.exists(self.user_data_file):
-            await interaction.followup.send("❌ **Not Verified**: Use `/verify <email>`", ephemeral=True)
+        # Check ban status
+        ban_msg = self.check_ban_status(interaction.user.id)
+        if ban_msg:
+            await interaction.followup.send(ban_msg, ephemeral=True)
             return
         
-        try:
-            with open(self.user_data_file, 'r') as f:
-                all_data = json.load(f)
-        except:
-            await interaction.followup.send("❌ **Error reading data**", ephemeral=True)
-            return
+        # Check temp access
+        temp_access, temp_expiry = self.check_temp_access(interaction.user.id)
         
-        user_data = all_data.get(str(interaction.user.id))
-        if not user_data:
-            await interaction.followup.send("❌ **Not Verified**: Use `/verify <email>`", ephemeral=True)
-            return
-        
-        tiers = user_data.get('tiers', [])
-        files = self.get_files_for_tiers(tiers)
+        if temp_access:
+            files = self.get_all_files()
+            embed_footer = f"✅ Temporary Access (Expires <t:{int(temp_expiry.timestamp())}:R>)"
+        else:
+            if not os.path.exists(self.user_data_file):
+                await interaction.followup.send("❌ **Not Verified**: Use `/verify <email>`", ephemeral=True)
+                return
+            
+            try:
+                with open(self.user_data_file, 'r') as f:
+                    all_data = json.load(f)
+            except:
+                await interaction.followup.send("❌ **Error reading data**", ephemeral=True)
+                return
+            
+            user_data = all_data.get(str(interaction.user.id))
+            if not user_data:
+                await interaction.followup.send("❌ **Not Verified**: Use `/verify <email>`", ephemeral=True)
+                return
+            
+            tiers = user_data.get('tiers', [])
+            files = self.get_files_for_tiers(tiers)
+            embed_footer = "Use /download <filename> to download"
         
         if not files:
             await interaction.followup.send("❌ **No files available**", ephemeral=True)
@@ -1183,11 +1614,12 @@ class PatreonCog(commands.Cog):
             file_list = "\n".join([f"• {name}" for name in file_names])
             embed.add_field(name=f"📁 {tier}", value=file_list, inline=False)
         
-        embed.set_footer(text="Use /download <filename> to download")
+        embed.set_footer(text=embed_footer)
         
         await interaction.followup.send(embed=embed, ephemeral=True)
     
     @app_commands.command(name="download", description="Download a file")
+    @app_commands.guild_only()
     async def download_cmd(self, interaction: discord.Interaction, file_name: str):
         """Download a file"""
         try:
@@ -1199,19 +1631,32 @@ class PatreonCog(commands.Cog):
             print(f"[DOWNLOAD] Error deferring: {e}")
             return
         
-        if not os.path.exists(self.user_data_file):
-            await interaction.followup.send("❌ **Not Verified**", ephemeral=True)
+        # Check ban status
+        ban_msg = self.check_ban_status(interaction.user.id)
+        if ban_msg:
+            await interaction.followup.send(ban_msg, ephemeral=True)
             return
         
-        with open(self.user_data_file, 'r') as f:
-            all_data = json.load(f)
+        # Check temp access
+        temp_access, temp_expiry = self.check_temp_access(interaction.user.id)
         
-        user_data = all_data.get(str(interaction.user.id))
-        if not user_data:
-            await interaction.followup.send("❌ **Not Verified**", ephemeral=True)
-            return
-        
-        files = self.get_files_for_tiers(user_data.get('tiers', []))
+        files = []
+        if temp_access:
+            files = self.get_all_files()
+        else:
+            if not os.path.exists(self.user_data_file):
+                await interaction.followup.send("❌ **Not Verified**", ephemeral=True)
+                return
+            
+            with open(self.user_data_file, 'r') as f:
+                all_data = json.load(f)
+            
+            user_data = all_data.get(str(interaction.user.id))
+            if not user_data:
+                await interaction.followup.send("❌ **Not Verified**", ephemeral=True)
+                return
+            
+            files = self.get_files_for_tiers(user_data.get('tiers', []))
         
         target_file = None
         for file in files:
