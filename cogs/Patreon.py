@@ -1353,6 +1353,7 @@ class PatreonCog(commands.Cog):
         embed.add_field(
             name="👤 User Commands",
             value=(
+                "`!trial` - Allows user to download trial data\n"
                 "`/setup` - Open interactive setup panel\n"
                 "`/verify <email>` - Verify your Patreon email\n"
                 "`/status` - Check your account status\n"

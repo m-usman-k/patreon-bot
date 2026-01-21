@@ -1,12 +1,63 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import os
 from dotenv import load_dotenv
+import os, requests, csv, time
 from cogs.Patreon import PatreonCog
 
 # Load environment variables
 load_dotenv()
+
+# Globals
+CSV_FILE = 'user_data.csv'
+
+
+# Functions
+def get_file_text_as_file():
+    URL = "https://gitfront.io/r/Spiken/iHrJpBGcbT3p/trials/raw/trial.lua"
+    response = requests.get(URL)
+
+    # Write the content to a file in binary mode
+    file_path = "trial_profiles.lua"
+    with open(file_path, "wb") as file:
+        file.write(response.content)
+    return file_path
+
+def read_csv():
+    if not os.path.exists(CSV_FILE):
+        return []
+    with open(CSV_FILE, mode='r', newline='') as file:
+        reader = csv.DictReader(file)
+        return list(reader)
+
+def write_csv(data):
+    with open(CSV_FILE, mode='w', newline='') as file:
+        fieldnames = ['userid', 'username', 'timestamp']
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(data)
+
+def update_user_data(userid, username):
+    data = read_csv()
+    user_found = False
+    for row in data:
+        if row['userid'] == str(userid):
+            user_found = True
+            last_trial = row['timestamp']
+            if int(time.time()) > int(last_trial):
+                row['timestamp'] = int(time.time())+180*24*60*60
+                write_csv(data)
+                return False
+            else:
+                return last_trial
+    if not user_found:
+        this_timestamp = int(time.time())+180*24*60*60
+        data.append({'userid': str(userid), 'username': username, 'timestamp': this_timestamp})
+        write_csv(data)
+        return False
+    
+    
+    
 
 class PatreonBot(commands.Bot):
     def __init__(self):
@@ -124,6 +175,35 @@ class PatreonBot(commands.Bot):
 
 def main():
     bot = PatreonBot()
+    
+    @bot.command()
+    async def trial(ctx):
+        embed = discord.Embed(title='Trial Profiles', description='Click the button to download a trial.', color=0x00ff00)
+        view = CustomView()
+        await ctx.send(embed=embed, view=view)
+
+    class CustomView(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=None)
+
+        @discord.ui.button(label='Trial Profiles', style=discord.ButtonStyle.primary)
+        async def on_button_click(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await interaction.response.defer()
+            user = interaction.user
+            is_timestamp = update_user_data(user.id, user.name)
+            if not is_timestamp:
+                try:
+                    file_path = get_file_text_as_file()
+                    await user.send("Here is your trial content:", file=discord.File(file_path))
+                    await interaction.followup.send('You have been given a trial period! Check your DMs.', ephemeral=True)
+                except discord.Forbidden:
+                    await interaction.followup.send('Please enable your DMs to receive trial install file.', ephemeral=True)
+                finally:
+                    # Clean up the file after sending
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+            else:
+                await interaction.followup.send(f'Not Eligible for trial right now! Request Again In <t:{is_timestamp}:R>', ephemeral=True)
     
     # Get token from environment
     token = os.getenv('DISCORD_TOKEN')
